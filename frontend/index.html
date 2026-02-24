@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>My App</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 60px auto; }
+    nav { display: flex; gap: 12px; margin-bottom: 32px; }
+    button { padding: 10px 24px; font-size: 15px; cursor: pointer; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .call-btn { background: #2563eb; color: white; border: none; border-radius: 6px; }
+    .call-btn:hover { background: #1d4ed8; }
+    .nav-btn { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .nav-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+    #response1, #response2 {
+      margin-top: 20px; padding: 16px;
+      background: #f8fafc; border: 1px solid #e2e8f0;
+      border-radius: 6px; font-size: 16px; min-height: 48px;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>My App</h2>
+
+  <nav>
+    <button class="nav-btn active" onclick="showPage(1)">Page 1</button>
+    <button class="nav-btn"        onclick="showPage(2)">Page 2</button>
+  </nav>
+
+  <!-- Page 1 -->
+  <div id="page1" class="page active">
+    <h3>Page 1 — Calls API1</h3>
+    <button class="call-btn" onclick="callApi1()">Call API1</button>
+    <div id="response1">Response will appear here...</div>
+  </div>
+
+  <!-- Page 2 -->
+  <div id="page2" class="page">
+    <h3>Page 2 — Calls API2</h3>
+    <button class="call-btn" onclick="callApi2()">Call API2</button>
+    <div id="response2">Response will appear here...</div>
+  </div>
+
+  <script>
+    function showPage(num) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('page' + num).classList.add('active');
+      document.querySelectorAll('.nav-btn')[num - 1].classList.add('active');
+    }
+
+    async function callApi1() {
+      const box = document.getElementById('response1');
+      box.textContent = 'Loading...';
+      try {
+        const res = await fetch('/api1');
+        box.textContent = await res.text();
+      } catch (e) {
+        box.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    async function callApi2() {
+      const box = document.getElementById('response2');
+      box.textContent = 'Loading...';
+      try {
+        const res = await fetch('/api2');
+        box.textContent = await res.text();
+      } catch (e) {
+        box.textContent = 'Error: ' + e.message;
+      }
+    }
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+# CDK
+cdk.out/
+.cdk.staging/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# AWS
+.aws/
