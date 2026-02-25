@@ -59,73 +59,34 @@ This architecture enables secure exposure of backend services to external client
 
 ## Low Level Design
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-'primaryColor': '#e3f2fd',
-'primaryBorderColor': '#1e88e5',
-'lineColor': '#546e7a',
-'secondaryColor': '#fce4ec',
-'tertiaryColor': '#f3e5f5',
-'fontSize': '14px'
-}}}%%
-flowchart TD
+**InfraStack** `extends` Stack — main CDK stack class that owns and wires together every AWS resource in this project.
 
-    Stack["Stack\nCDK Base Class"]
+**Vpc** — creates the isolated network boundary with 2 public subnets across 2 availability zones and no NAT gateway to keep costs minimal.
 
-    subgraph InfraStack["InfraStack extends Stack"]
+**SecurityGroup — alb_sg** — controls who can reach the ALB, allowing only inbound TCP 80 from the public internet.
 
-        Vpc["Vpc\nmax_azs: 2\nnat_gateways: 0\nsubnet: PUBLIC"]
+**SecurityGroup — ecs_sg** — locks down Fargate tasks so only the ALB security group can reach them on ports 5000 and 6001, never the public internet directly.
 
-        subgraph SGLayer["Security Groups"]
-            ALBSG["SecurityGroup\nalb_sg\nInbound: TCP 80 from 0.0.0.0/0"]
-            ECSSG["SecurityGroup\necs_sg\nInbound: TCP 5000 from alb_sg\nInbound: TCP 6001 from alb_sg"]
-        end
+**ApplicationLoadBalancer** — the single public entry point for all traffic, spanning both availability zones for high availability.
 
-        subgraph ALBLayer["Load Balancer"]
-            ALB["ApplicationLoadBalancer\ninternet_facing: True\nport: 80"]
-            Listener["ApplicationListener\nRule 1: /api1* → TG1\nRule 2: /api2* → TG2\nDefault: 404"]
-        end
+**ApplicationListener** — sits on port 80 of the ALB and holds the path-based routing rules that decide which target group each request goes to.
 
-        subgraph TGLayer["Target Groups"]
-            TG1["ApplicationTargetGroup\ntg1\nport: 5000\ntarget_type: IP\nhealth: GET /api1"]
-            TG2["ApplicationTargetGroup\ntg2\nport: 6001\ntarget_type: IP\nhealth: GET /api2"]
-        end
+**ApplicationTargetGroup — tg1** — tracks healthy Fargate tasks for API1 on port 5000 and health checks them via GET /api1.
 
-        Role["IAM Role\nexec_role\nassumed_by: ecs-tasks\npolicy: ECSTaskExecutionRolePolicy"]
+**ApplicationTargetGroup — tg2** — tracks healthy Fargate tasks for API2 on port 6001 and health checks them via GET /api2.
 
-        subgraph API1Flow["API1 — Fargate Service 1"]
-            Task1["FargateTaskDefinition\napi1_task\ncpu: 256  mem: 512MB"]
-            Container1["ContainerDefinition\nimage: ECR api1:latest\nport: 5000\nlogs: CloudWatch"]
-            Service1["FargateService\napi1_service\ndesired_count: 1\nassign_public_ip: True"]
-        end
+**IAM Role — exec_role** — grants ECS the minimum permissions needed to pull images from ECR and write logs to CloudWatch.
 
-        subgraph API2Flow["API2 — Fargate Service 2"]
-            Task2["FargateTaskDefinition\napi2_task\ncpu: 256  mem: 512MB"]
-            Container2["ContainerDefinition\nimage: ECR api2:latest\nport: 6001\nlogs: CloudWatch"]
-            Service2["FargateService\napi2_service\ndesired_count: 1\nassign_public_ip: True"]
-        end
+**FargateTaskDefinition — api1_task** — defines the resource envelope for API1 containers, 256 CPU units and 512MB memory per task.
 
-        Output["CfnOutput\nALBDnsName\nalb.load_balancer_dns_name"]
+**FargateTaskDefinition — api2_task** — defines the resource envelope for API2 containers, 256 CPU units and 512MB memory per task.
 
-    end
+**ContainerDefinition — api1** — tells ECS which ECR image to run for API1, which port to expose, and where to send logs.
 
-    Stack -->|inherits| InfraStack
-    Vpc --> ALBSG
-    Vpc --> ECSSG
-    Vpc --> ALB
-    Vpc --> TG1
-    Vpc --> TG2
-    ALBSG --> ALB
-    ALB --> Listener
-    Listener --> TG1
-    Listener --> TG2
-    Role --> Task1
-    Role --> Task2
-    Task1 --> Container1
-    Task1 --> Service1
-    Task2 --> Container2
-    Task2 --> Service2
-    Service1 -->|attaches to| TG1
-    Service2 -->|attaches to| TG2
-    ALB --> Output
-```
+**ContainerDefinition — api2** — tells ECS which ECR image to run for API2, which port to expose, and where to send logs.
+
+**FargateService — api1_service** — keeps one API1 task running at all times and registers it with tg1 so the ALB can route to it.
+
+**FargateService — api2_service** — keeps one API2 task running at all times and registers it with tg2 so the ALB can route to it.
+
+**CfnOutput** — prints the ALB DNS name to the terminal after `cdk deploy` so you can immediately test the endpoints.
