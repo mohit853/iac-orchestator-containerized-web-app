@@ -68,59 +68,64 @@ This architecture enables secure exposure of backend services to external client
 'tertiaryColor': '#f3e5f5',
 'fontSize': '14px'
 }}}%%
-flowchart LR
+flowchart TD
 
-User["👤 User Browser\nfetch /api1 or /api2"]
+    Stack["Stack\nCDK Base Class"]
 
-subgraph VPC["VPC (10.0.0.0/16)"]
+    subgraph InfraStack["InfraStack extends Stack"]
 
-    IGW["Internet Gateway"]
+        Vpc["Vpc\nmax_azs: 2\nnat_gateways: 0\nsubnet: PUBLIC"]
 
-    subgraph PubSubnets["Public Subnets (AZ1 + AZ2)"]
-        ALB["Application Load Balancer :80\n─────────────────\nListener Rule 1: /api1* → TG1\nListener Rule 2: /api2* → TG2\nDefault: 404"]
-    end
-
-    subgraph SGLayer["Security Groups"]
-        ALBSG["ALB SG\nInbound: TCP 80 from 0.0.0.0/0"]
-        ECSSG["ECS SG\nInbound: TCP 5000 from ALB SG\nInbound: TCP 6001 from ALB SG"]
-    end
-
-    subgraph ECSCluster["ECS Fargate Cluster"]
-
-        subgraph SVC1["Fargate Service 1"]
-            TASK1["Task Definition\ncpu: 256 mem: 512MB\n─────────────\nContainer: container_a\nImage: ECR api1:latest\nPort: 5000\nLogs: CloudWatch /api1"]
+        subgraph SGLayer["Security Groups"]
+            ALBSG["SecurityGroup\nalb_sg\nInbound: TCP 80 from 0.0.0.0/0"]
+            ECSSG["SecurityGroup\necs_sg\nInbound: TCP 5000 from alb_sg\nInbound: TCP 6001 from alb_sg"]
         end
 
-        subgraph SVC2["Fargate Service 2"]
-            TASK2["Task Definition\ncpu: 256 mem: 512MB\n─────────────\nContainer: container_b\nImage: ECR api2:latest\nPort: 6001\nLogs: CloudWatch /api2"]
+        subgraph ALBLayer["Load Balancer"]
+            ALB["ApplicationLoadBalancer\ninternet_facing: True\nport: 80"]
+            Listener["ApplicationListener\nRule 1: /api1* → TG1\nRule 2: /api2* → TG2\nDefault: 404"]
         end
 
+        subgraph TGLayer["Target Groups"]
+            TG1["ApplicationTargetGroup\ntg1\nport: 5000\ntarget_type: IP\nhealth: GET /api1"]
+            TG2["ApplicationTargetGroup\ntg2\nport: 6001\ntarget_type: IP\nhealth: GET /api2"]
+        end
+
+        Role["IAM Role\nexec_role\nassumed_by: ecs-tasks\npolicy: ECSTaskExecutionRolePolicy"]
+
+        subgraph API1Flow["API1 — Fargate Service 1"]
+            Task1["FargateTaskDefinition\napi1_task\ncpu: 256  mem: 512MB"]
+            Container1["ContainerDefinition\nimage: ECR api1:latest\nport: 5000\nlogs: CloudWatch"]
+            Service1["FargateService\napi1_service\ndesired_count: 1\nassign_public_ip: True"]
+        end
+
+        subgraph API2Flow["API2 — Fargate Service 2"]
+            Task2["FargateTaskDefinition\napi2_task\ncpu: 256  mem: 512MB"]
+            Container2["ContainerDefinition\nimage: ECR api2:latest\nport: 6001\nlogs: CloudWatch"]
+            Service2["FargateService\napi2_service\ndesired_count: 1\nassign_public_ip: True"]
+        end
+
+        Output["CfnOutput\nALBDnsName\nalb.load_balancer_dns_name"]
+
     end
 
-    subgraph TGs["Target Groups"]
-        TG1["Target Group 1\nPort: 5000 | Protocol: HTTP\nTarget Type: IP\nHealth Check: GET /api1"]
-        TG2["Target Group 2\nPort: 6001 | Protocol: HTTP\nTarget Type: IP\nHealth Check: GET /api2"]
-    end
-
-end
-
-subgraph ECR["ECR — Private Registry"]
-    IMG1["api1:latest"]
-    IMG2["api2:latest"]
-end
-
-IAM["IAM Exec Role\nAmazonECSTaskExecutionRolePolicy\nAllows: ECR pull + CloudWatch logs"]
-
-User -->|"HTTPS GET /api1 or /api2"| IGW
-IGW --> ALB
-ALB -->|"path: /api1*\npriority 1"| TG1
-ALB -->|"path: /api2*\npriority 2"| TG2
-TG1 -->|"health check pass"| TASK1
-TG2 -->|"health check pass"| TASK2
-IMG1 -.->|"pulled at task start"| TASK1
-IMG2 -.->|"pulled at task start"| TASK2
-IAM -.->|"grants ECR + CW access"| TASK1
-IAM -.->|"grants ECR + CW access"| TASK2
-TASK1 -->|"Hello from API1"| User
-TASK2 -->|"Hello from API2"| User
+    Stack -->|inherits| InfraStack
+    Vpc --> ALBSG
+    Vpc --> ECSSG
+    Vpc --> ALB
+    Vpc --> TG1
+    Vpc --> TG2
+    ALBSG --> ALB
+    ALB --> Listener
+    Listener --> TG1
+    Listener --> TG2
+    Role --> Task1
+    Role --> Task2
+    Task1 --> Container1
+    Task1 --> Service1
+    Task2 --> Container2
+    Task2 --> Service2
+    Service1 -->|attaches to| TG1
+    Service2 -->|attaches to| TG2
+    ALB --> Output
 ```
